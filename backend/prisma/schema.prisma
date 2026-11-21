@@ -1,0 +1,807 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum RoleKey {
+  SUPER_ADMIN
+  ADMIN
+  CAMPAIGN_MANAGER
+  CONTENT_MANAGER
+  CREATOR
+  BRAND
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  CREATOR_INVITATION
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  INFO_REQUESTED
+  APPROVED
+  REJECTED
+}
+
+enum ProfileStatus {
+  DRAFT
+  APPROVED
+  SUSPENDED
+}
+
+enum BrandStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum EnquiryStatus {
+  NEW
+  IN_REVIEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED
+  CLOSED
+  SPAM
+}
+
+enum BriefStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  INFO_REQUESTED
+  APPROVED
+  REJECTED
+  CONVERTED
+}
+
+enum CampaignStatus {
+  DRAFT
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignCreatorStatus {
+  INVITED
+  INVITE_ACCEPTED
+  INVITE_DECLINED
+  SUBMITTED
+  UNDER_REVIEW
+  SHORTLISTED
+  SELECTED
+  NOT_SELECTED
+  WITHDRAWN
+}
+
+enum DeliverableStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+  REVISION_REQUESTED
+  APPROVED
+  PUBLISHED
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  YOUTUBE
+  TIKTOK
+  FACEBOOK
+  X
+  LINKEDIN
+  SNAPCHAT
+  OTHER
+}
+
+enum AssetKind {
+  IMAGE
+  DOCUMENT
+  VIDEO
+}
+
+enum AssetPurpose {
+  PROFILE_PHOTO
+  PORTFOLIO
+  MEDIA_KIT
+  CASE_STUDY_MEDIA
+  SERVICE_IMAGE
+  SITE_IMAGE
+  CAMPAIGN_REFERENCE
+  OTHER
+}
+
+enum NotificationType {
+  GENERAL
+  APPLICATION_UPDATE
+  CAMPAIGN_INVITATION
+  ENQUIRY_UPDATE
+  BRIEF_UPDATE
+  ACCOUNT
+  SYSTEM
+}
+
+enum DeletionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+// ============================================================
+// IDENTITY AND ACCESS
+// ============================================================
+
+model Role {
+  id          String   @id @default(cuid())
+  key         RoleKey  @unique
+  name        String
+  description String?
+  isStaff     Boolean  @default(false)
+  permissions String[]
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  users User[]
+}
+
+model User {
+  id                  String     @id @default(cuid())
+  email               String     @unique
+  fullName            String
+  passwordHash        String?
+  roleId              String
+  role                Role       @relation(fields: [roleId], references: [id])
+  status              UserStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt     DateTime?  @db.Timestamptz(3)
+  mustChangePassword  Boolean    @default(false)
+  failedLoginAttempts Int        @default(0)
+  lockedUntil         DateTime?  @db.Timestamptz(3)
+  lastLoginAt         DateTime?  @db.Timestamptz(3)
+  createdAt           DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime   @updatedAt @db.Timestamptz(3)
+
+  sessions             Session[]
+  authTokens           AuthToken[]
+  creatorProfile       CreatorProfile?
+  brandAccount         BrandAccount?
+  notifications        Notification[]
+  activityLogs         ActivityLog[]
+  adminNotes           AdminNote[]
+  uploadedAssets       UploadedAsset[]
+  assignedEnquiries    BrandEnquiry[]        @relation("EnquiryAssignee")
+  reviewedApplications CreatorApplication[]  @relation("ApplicationReviewer")
+  managedCampaigns     Campaign[]            @relation("CampaignManager")
+  verifiedBrands       BrandAccount[]        @relation("BrandVerifier")
+  verifiedSocials      SocialAccount[]       @relation("SocialVerifier")
+  handledDeletions     DeletionRequest[]
+
+  @@index([roleId])
+  @@index([status])
+}
+
+// Server-side sessions: only a hash of the cookie token is stored.
+model Session {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  csrfSecret String
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipHash     String?
+  userAgent  String?
+  expiresAt  DateTime  @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Email verification, password reset and creator invitation tokens (hashed).
+model AuthToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      TokenType
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+// ============================================================
+// CATALOGUE (editable via CMS)
+// ============================================================
+
+model CreatorCategory {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  name         String
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  translations Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  applications CreatorApplication[]
+  profiles     CreatorProfile[]
+}
+
+model Service {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  name         String
+  summary      String   @db.Text
+  description  String   @db.Text
+  benefits     String[]
+  imageUrl     String?
+  imageAlt     String?
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  translations Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  enquiries BrandEnquiry[]
+}
+
+model Industry {
+  id                 String   @id @default(cuid())
+  slug               String   @unique
+  name               String
+  introduction       String   @db.Text
+  suitableCategories String[]
+  campaignTypes      String[]
+  opportunities      String[]
+  sortOrder          Int      @default(0)
+  isActive           Boolean  @default(true)
+  translations       Json?
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
+
+  enquiries    BrandEnquiry[]
+  brandAccounts BrandAccount[]
+  caseStudies  CaseStudy[]
+}
+
+// ============================================================
+// CREATORS
+// ============================================================
+
+model CreatorApplication {
+  id                   String            @id @default(cuid())
+  applicationCode      String            @unique
+  status               ApplicationStatus @default(SUBMITTED)
+
+  fullName             String
+  email                String
+  phone                String
+  country              String
+  city                 String
+  ageConfirmed         Boolean
+  instagram            String?
+  youtube              String?
+  tiktok               String?
+  otherSocials         String?           @db.Text
+  categoryId           String
+  category             CreatorCategory   @relation(fields: [categoryId], references: [id])
+  audienceSize         Int?
+  languages            String[]
+  biography            String            @db.Text
+  collaborationInterests String          @db.Text
+
+  consentPrivacy       Boolean
+  consentAt            DateTime          @db.Timestamptz(3)
+  ipHash               String?
+
+  reviewMessage        String?           @db.Text
+  reviewedById         String?
+  reviewedBy           User?             @relation("ApplicationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt           DateTime?         @db.Timestamptz(3)
+  invitedAt            DateTime?         @db.Timestamptz(3)
+
+  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+
+  profile              CreatorProfile?
+  assets               UploadedAsset[]
+  notes                AdminNote[]
+
+  @@index([email])
+  @@index([status, createdAt])
+  @@index([categoryId])
+}
+
+model CreatorProfile {
+  id              String        @id @default(cuid())
+  slug            String        @unique
+  userId          String?       @unique
+  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  applicationId   String?       @unique
+  application     CreatorApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  displayName     String
+  shortIntro      String
+  biography       String        @db.Text
+  categoryId      String
+  category        CreatorCategory @relation(fields: [categoryId], references: [id])
+  niches          String[]
+  country         String
+  city            String?
+  languages       String[]
+  audienceSize    Int?
+  audienceVerified Boolean      @default(false)
+  collaborationInterests String? @db.Text
+
+  status          ProfileStatus @default(DRAFT)
+  isPublished     Boolean       @default(false)
+  publishedAt     DateTime?     @db.Timestamptz(3)
+
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
+
+  socialAccounts  SocialAccount[]
+  assets          UploadedAsset[]
+  campaignLinks   CampaignCreator[]
+  shortlists      Shortlist[]
+  notes           AdminNote[]
+
+  @@index([status, isPublished])
+  @@index([categoryId])
+  @@index([country])
+}
+
+model SocialAccount {
+  id            String         @id @default(cuid())
+  profileId     String
+  profile       CreatorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  platform      SocialPlatform
+  handle        String?
+  url           String
+  followerCount Int?
+  isVerified    Boolean        @default(false)
+  verifiedAt    DateTime?      @db.Timestamptz(3)
+  verifiedById  String?
+  verifiedBy    User?          @relation("SocialVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@unique([profileId, url])
+  @@index([platform])
+}
+
+// ============================================================
+// BRANDS, ENQUIRIES AND BRIEFS
+// ============================================================
+
+model BrandAccount {
+  id           String      @id @default(cuid())
+  userId       String      @unique
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contactName  String
+  companyName  String
+  website      String?
+  country      String
+  industryId   String?
+  industry     Industry?   @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  phone        String?
+  description  String?     @db.Text
+  status       BrandStatus @default(PENDING)
+  verifiedAt   DateTime?   @db.Timestamptz(3)
+  verifiedById String?
+  verifiedBy   User?       @relation("BrandVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime    @updatedAt @db.Timestamptz(3)
+
+  enquiries BrandEnquiry[]
+  briefs    CampaignBrief[]
+  campaigns Campaign[]
+  shortlists Shortlist[]
+  notes     AdminNote[]
+
+  @@index([status])
+}
+
+model BrandEnquiry {
+  id             String        @id @default(cuid())
+  enquiryCode    String        @unique
+  status         EnquiryStatus @default(NEW)
+
+  fullName       String
+  businessEmail  String
+  companyName    String
+  country        String
+  phone          String
+  website        String
+  industryId     String
+  industry       Industry      @relation(fields: [industryId], references: [id])
+  serviceId      String
+  service        Service       @relation(fields: [serviceId], references: [id])
+  objective      String        @db.Text
+  budgetRange    String?
+  timeline       String
+  additionalInfo String?       @db.Text
+
+  consentPrivacy Boolean
+  consentAt      DateTime      @db.Timestamptz(3)
+  ipHash         String?
+  source         String?
+
+  assignedToId   String?
+  assignedTo     User?         @relation("EnquiryAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  followUpAt     DateTime?     @db.Timestamptz(3)
+
+  brandAccountId String?
+  brandAccount   BrandAccount? @relation(fields: [brandAccountId], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(3)
+
+  notes          AdminNote[]
+  campaigns      Campaign[]
+
+  @@index([status, createdAt])
+  @@index([businessEmail])
+  @@index([assignedToId])
+  @@index([followUpAt])
+  @@index([brandAccountId])
+}
+
+model CampaignBrief {
+  id                     String      @id @default(cuid())
+  briefCode              String      @unique
+  brandAccountId         String
+  brandAccount           BrandAccount @relation(fields: [brandAccountId], references: [id], onDelete: Cascade)
+  status                 BriefStatus @default(SUBMITTED)
+
+  campaignName           String
+  brandName              String
+  objective              String      @db.Text
+  targetAudience         String      @db.Text
+  location               String
+  creatorCategories      String[]
+  platforms              SocialPlatform[]
+  creatorCount           Int
+  deliverables           String      @db.Text
+  timeline               String
+  deadlineAt             DateTime?   @db.Timestamptz(3)
+  timeZone               String?
+  budgetMin              Decimal?    @db.Decimal(14, 2)
+  budgetMax              Decimal?    @db.Decimal(14, 2)
+  budgetCurrency         String?     @db.VarChar(3)
+  additionalRequirements String?     @db.Text
+  reviewMessage          String?     @db.Text
+
+  createdAt              DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime    @updatedAt @db.Timestamptz(3)
+
+  campaign               Campaign?
+
+  @@index([brandAccountId])
+  @@index([status, createdAt])
+}
+
+// ============================================================
+// CAMPAIGNS
+// ============================================================
+
+model Campaign {
+  id              String         @id @default(cuid())
+  campaignCode    String         @unique
+  title           String
+  description     String?        @db.Text
+  objective       String?        @db.Text
+  status          CampaignStatus @default(DRAFT)
+
+  brandAccountId  String?
+  brandAccount    BrandAccount?  @relation(fields: [brandAccountId], references: [id], onDelete: SetNull)
+  briefId         String?        @unique
+  brief           CampaignBrief? @relation(fields: [briefId], references: [id], onDelete: SetNull)
+  enquiryId       String?
+  enquiry         BrandEnquiry?  @relation(fields: [enquiryId], references: [id], onDelete: SetNull)
+  managerId       String?
+  manager         User?          @relation("CampaignManager", fields: [managerId], references: [id], onDelete: SetNull)
+
+  startsAt        DateTime?      @db.Timestamptz(3)
+  endsAt          DateTime?      @db.Timestamptz(3)
+  timeZone        String?
+  budgetAmount    Decimal?       @db.Decimal(14, 2)
+  budgetCurrency  String?        @db.VarChar(3)
+
+  outcomeSummary  String?        @db.Text
+  outcomeMetrics  Json?
+
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+
+  creators        CampaignCreator[]
+  deliverables    Deliverable[]
+  caseStudy       CaseStudy?
+  assets          UploadedAsset[]
+  notes           AdminNote[]
+  shortlists      Shortlist[]
+
+  @@index([status])
+  @@index([brandAccountId])
+  @@index([managerId])
+}
+
+model CampaignCreator {
+  id               String                @id @default(cuid())
+  campaignId       String
+  campaign         Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creatorProfileId String
+  creatorProfile   CreatorProfile        @relation(fields: [creatorProfileId], references: [id], onDelete: Cascade)
+  status           CampaignCreatorStatus @default(INVITED)
+  message          String?               @db.Text
+  feeAmount        Decimal?              @db.Decimal(14, 2)
+  feeCurrency      String?               @db.VarChar(3)
+  invitedAt        DateTime?             @db.Timestamptz(3)
+  respondedAt      DateTime?             @db.Timestamptz(3)
+  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime              @updatedAt @db.Timestamptz(3)
+
+  deliverables     Deliverable[]
+
+  @@unique([campaignId, creatorProfileId])
+  @@index([creatorProfileId, status])
+}
+
+model Deliverable {
+  id                String            @id @default(cuid())
+  campaignId        String
+  campaign          Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignCreatorId String?
+  campaignCreator   CampaignCreator?  @relation(fields: [campaignCreatorId], references: [id], onDelete: SetNull)
+  title             String
+  description       String?           @db.Text
+  platform          SocialPlatform?
+  status            DeliverableStatus @default(PENDING)
+  dueAt             DateTime?         @db.Timestamptz(3)
+  timeZone          String?
+  submissionUrl     String?
+  approvedAt        DateTime?         @db.Timestamptz(3)
+  sortOrder         Int               @default(0)
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @db.Timestamptz(3)
+
+  @@index([campaignId, status])
+  @@index([dueAt])
+}
+
+// A brand's private shortlist of approved creators.
+model Shortlist {
+  id               String         @id @default(cuid())
+  brandAccountId   String
+  brandAccount     BrandAccount   @relation(fields: [brandAccountId], references: [id], onDelete: Cascade)
+  creatorProfileId String
+  creatorProfile   CreatorProfile @relation(fields: [creatorProfileId], references: [id], onDelete: Cascade)
+  campaignId       String?
+  campaign         Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  note             String?
+  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@unique([brandAccountId, creatorProfileId])
+  @@index([creatorProfileId])
+}
+
+// ============================================================
+// PUBLIC CONTENT / CMS
+// ============================================================
+
+model CaseStudy {
+  id               String        @id @default(cuid())
+  slug             String        @unique
+  title            String
+  brandName        String
+  industryId       String?
+  industry         Industry?     @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  goal             String?       @db.Text
+  overview         String        @db.Text
+  challenge        String        @db.Text
+  strategy         String        @db.Text
+  creatorSelection String        @db.Text
+  execution        String        @db.Text
+  outcome          String        @db.Text
+  creatorCategories String[]
+  deliverables     String[]
+  verifiedResults  Json?
+  status           ContentStatus @default(DRAFT)
+  publishedAt      DateTime?     @db.Timestamptz(3)
+  campaignId       String?       @unique
+  campaign         Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  seoTitle         String?
+  seoDescription   String?
+  translations     Json?
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
+
+  assets           UploadedAsset[]
+
+  @@index([status, publishedAt])
+}
+
+// Key/value content blocks: "home.hero", "about.story", "site.social", "site.contact" ...
+model WebsiteContent {
+  id        String        @id @default(cuid())
+  key       String
+  locale    String        @default("en")
+  data      Json
+  status    ContentStatus @default(PUBLISHED)
+  updatedById String?
+  createdAt DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@unique([key, locale])
+}
+
+model PageSeo {
+  id            String   @id @default(cuid())
+  path          String
+  locale        String   @default("en")
+  title         String
+  description   String
+  ogImageUrl    String?
+  noIndex       Boolean  @default(false)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([path, locale])
+}
+
+// Real testimonials only. Hidden on the site while this table is empty.
+model Testimonial {
+  id          String   @id @default(cuid())
+  authorName  String
+  authorRole  String?
+  company     String?
+  quote       String   @db.Text
+  isPublished Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+}
+
+// ============================================================
+// FILES, NOTES, NOTIFICATIONS, AUDIT
+// ============================================================
+
+model UploadedAsset {
+  id                   String        @id @default(cuid())
+  kind                 AssetKind
+  purpose              AssetPurpose
+  provider             String        @default("cloudinary")
+  publicId             String
+  url                  String
+  mimeType             String
+  sizeBytes            Int
+  originalName         String?
+  width                Int?
+  height               Int?
+  altText              String?
+  isPublic             Boolean       @default(false)
+  isCover              Boolean       @default(false)
+  sortOrder            Int           @default(0)
+
+  uploadedById         String?
+  uploadedBy           User?         @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  creatorProfileId     String?
+  creatorProfile       CreatorProfile? @relation(fields: [creatorProfileId], references: [id], onDelete: SetNull)
+  creatorApplicationId String?
+  creatorApplication   CreatorApplication? @relation(fields: [creatorApplicationId], references: [id], onDelete: SetNull)
+  caseStudyId          String?
+  caseStudy            CaseStudy?    @relation(fields: [caseStudyId], references: [id], onDelete: SetNull)
+  campaignId           String?
+  campaign             Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  createdAt            DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@unique([provider, publicId])
+  @@index([creatorProfileId])
+  @@index([creatorApplicationId])
+  @@index([caseStudyId])
+  @@index([campaignId])
+}
+
+// Private staff notes. Never exposed to creators or brands.
+model AdminNote {
+  id                   String   @id @default(cuid())
+  body                 String   @db.Text
+  authorId             String
+  author               User     @relation(fields: [authorId], references: [id])
+
+  enquiryId            String?
+  enquiry              BrandEnquiry? @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  creatorApplicationId String?
+  creatorApplication   CreatorApplication? @relation(fields: [creatorApplicationId], references: [id], onDelete: Cascade)
+  creatorProfileId     String?
+  creatorProfile       CreatorProfile? @relation(fields: [creatorProfileId], references: [id], onDelete: Cascade)
+  brandAccountId       String?
+  brandAccount         BrandAccount? @relation(fields: [brandAccountId], references: [id], onDelete: Cascade)
+  campaignId           String?
+  campaign             Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([enquiryId])
+  @@index([creatorApplicationId])
+  @@index([creatorProfileId])
+  @@index([brandAccountId])
+  @@index([campaignId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType @default(GENERAL)
+  title     String
+  body      String           @db.Text
+  link      String?
+  readAt    DateTime?        @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipHash     String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
+
+// Data deletion requests (brief Section 14).
+model DeletionRequest {
+  id          String         @id @default(cuid())
+  fullName    String
+  email       String
+  details     String?        @db.Text
+  status      DeletionStatus @default(PENDING)
+  handledById String?
+  handledBy   User?          @relation(fields: [handledById], references: [id], onDelete: SetNull)
+  handledAt   DateTime?      @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([email])
+}

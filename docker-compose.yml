@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: kovenza-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kovenza
+      POSTGRES_PASSWORD: kovenza_local_dev_only
+      POSTGRES_DB: kovenza
+    ports:
+      - "5432:5432"
+    volumes:
+      - kovenza_pgdata:/var/lib/postgresql/data
+
+volumes:
+  kovenza_pgdata:
