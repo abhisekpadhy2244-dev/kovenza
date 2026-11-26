@@ -9,6 +9,7 @@ import { apiLimiter } from './middleware/rateLimit';
 import { originCheck } from './middleware/csrf';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import { apiRouter } from './routes';
+import { authenticate } from './middleware/auth';
 
 export function createApp() {
   const app = express();
@@ -29,6 +30,7 @@ export function createApp() {
 
   app.use('/api', apiLimiter);
   app.use('/api', originCheck);
+  app.use('/api', authenticate);
   app.use('/api', apiRouter);
 
   app.use(notFoundHandler);
