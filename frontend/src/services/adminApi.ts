@@ -16,9 +16,11 @@ function fieldMessages(details: unknown): Record<string, string> {
   return result;
 }
 
-async function adminRequest<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+
+async function adminRequest<T>(method: Method, path: string, body?: unknown, form?: FormData): Promise<T> {
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (body !== undefined && !form) headers['Content-Type'] = 'application/json';
   if (method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
 
   let response: Response;
@@ -26,7 +28,7 @@ async function adminRequest<T>(method: 'GET' | 'POST', path: string, body?: unkn
     response = await fetch(`/api/admin${path}`, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
       credentials: 'same-origin',
       cache: 'no-store',
     });
@@ -56,3 +58,6 @@ async function adminRequest<T>(method: 'GET' | 'POST', path: string, body?: unkn
 
 export const adminGet = <T>(path: string) => adminRequest<T>('GET', path);
 export const adminPost = <T>(path: string, body?: unknown) => adminRequest<T>('POST', path, body ?? {});
+export const adminPatch = <T>(path: string, body: unknown) => adminRequest<T>('PATCH', path, body);
+export const adminDelete = <T>(path: string) => adminRequest<T>('DELETE', path);
+export const adminUpload = <T>(path: string, form: FormData) => adminRequest<T>('POST', path, undefined, form);

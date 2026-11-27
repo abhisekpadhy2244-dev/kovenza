@@ -9,6 +9,7 @@ import { getOverview } from '../controllers/adminController';
 import { requireAuth, requireAuthAllowPasswordChange, requireCsrf } from '../middleware/auth';
 import { authLimiter } from '../middleware/rateLimit';
 import { requireStaff } from '../middleware/rbac';
+import { adminCreatorsRouter } from './adminCreators';
 
 export const adminRouter = Router();
 
@@ -26,3 +27,6 @@ adminRouter.post('/auth/change-password', authLimiter, adminChangePassword);
 adminRouter.use(requireAuth);
 
 adminRouter.get('/overview', getOverview);
+adminRouter.use('/creators', adminCreatorsRouter);
+
+// Added in Parts 7C and 7D: /enquiries, /content

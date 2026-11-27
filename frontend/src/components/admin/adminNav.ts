@@ -1,4 +1,4 @@
-import { KeyRound, LayoutDashboard, type LucideIcon } from 'lucide-react';
+import { KeyRound, LayoutDashboard, Users, type LucideIcon } from 'lucide-react';
 
 export interface AdminNavItem {
   label: string;
@@ -8,9 +8,10 @@ export interface AdminNavItem {
   permission?: string;
 }
 
-// Only pages that exist are listed. Parts 7B to 7D add Creators, Enquiries and Website content.
+// Only pages that exist are listed. Parts 7C and 7D add Enquiries and Website content.
 export const adminNav: AdminNavItem[] = [
   { label: 'Overview', href: '/admin', icon: LayoutDashboard },
+  { label: 'Creators', href: '/admin/creators', icon: Users, permission: 'creators:read' },
   { label: 'Change password', href: '/admin/change-password', icon: KeyRound },
 ];
 
