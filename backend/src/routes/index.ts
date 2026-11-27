@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { adminRouter } from './admin';
 import { healthRouter } from './health';
 import { publicRouter } from './public';
 
@@ -6,8 +7,8 @@ export const apiRouter = Router();
 
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/public', publicRouter);
+apiRouter.use('/admin', adminRouter);
 
-// Added in later parts:
-//   /admin    authenticated admin API (Part 7)
-//   /creator  creator portal (Phase 2)
-//   /brand    brand portal (Phase 2)
+// Added in Phase 2:
+//   /creator  creator portal
+//   /brand    brand portal
